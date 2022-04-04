@@ -1,0 +1,169 @@
+---
+title: "2. Statistical Modeling"
+output: html_document
+date: '2022-04-04'
+editor_options: 
+  chunk_output_type: console
+---
+
+## 2.1 
+Generate 1,000 random 0/1 variables that model mutations occurring along a 1,000 long gene sequence. These occur independently at a rate of 10^−4 each. Then sum the 1,000 positions to count how many mutations in sequences of length 1,000.
+
+Find the correct distribution for these mutation sums using a goodness of fit test and make a plot to visualize the quality of the fit.
+
+```{r}
+set.seed(123)
+n <- 1000
+p <- 10^-4
+mutations <- rbinom(n, size = 1, prob = p)
+n_mutations <- sum(mutations)
+n_mutations
+
+# find correct distribution 
+library(vcd)
+gf1 <- goodfit(mutations, 'binomial', size = )
+rootogram(gf1)
+```
+
+## 2.2 
+Make a function that generates n random uniform numbers between 0 and 7 and returns their maximum. Execute the function for n = 25. Repeat this procedure 
+B = 100 times. Plot the distribution of these maxima.
+
+What is the maximum likelihood estimate of the maximum of a sample of size 25 (call it θ)? Can you find a theoretical justification and the true maximum θ?
+
+```{r}
+max_random_numbers <- function(n) {
+  numbers <- runif(n, min = 0, max = 7)
+  return(max(numbers))
+}
+B <- 100
+maximas <- replicate(B, max_random_numbers(25))
+hist(maximas)
+maximas[which.max(maximas)]
+```
+
+## 2.3
+A sequence of three nucleotides (a codon) taken in a coding region of a gene can be transcribed into one of 20 possible amino acids. There are 4^3 = 64 possible codon sequences, but only 20 amino acids. We say the genetic code is redundant: there are several ways to spell each amino acid.
+
+The multiplicity (the number of codons that code for the same amino acid) varies from 2 to 6. The different codon-spellings of each amino acid do not occur with equal probabilities. Let’s look at the data for the standard laboratory strain of tuberculosis (H37Rv):
+```{r}
+mtb = read.table("data/M_tuberculosis.txt", header = TRUE)
+head(mtb, n = 4)
+```
+The codons for the amino acid proline are of the form CC∗ and they occur with the following frequencies in Mycobacterium turberculosis:
+```{r}
+pro = mtb[mtb$AmAcid == 'Pro', 'Number']
+pro/sum(pro)
+```
+a) Explore the data mtb using table to tabulate the AmAcid and Codon variables.
+
+```{r}
+# a)
+codon_no <- rowSums(table(mtb))
+codon_no
+
+# b)
+library(ggplot2)
+ggplot(mtb, aes(x=Codon, y=PerThous)) +
+  geom_col()+
+  facet_wrap(~AmAcid, scales="free") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+b) How was the PerThous variable created?
+The sum of all of the numbers of codons gives us the total number of codons in the M. tuberculosis genome: sum_codons. But this is not the size of the M. tuberculosis genome, but this is just the number of codons in all M. tuberculosis genes. To get the size of the genome, we can multiply each codon by 3 and add all non-coding nucleotides (which is not available know from this data set).
+```{r}
+sum_codons <- sum(mtb$Number)
+sum_codons
+```
+PerThous is created by dividing `Number` by the `sum_codons`. This value is then multiplied by 1000 for easier interpretation. Let's look at a few examples
+```{r}
+pro_test <- mtb[mtb$AmAcid == 'Pro', "Number"]
+pro_test/sum_codons * 1000 
+mtb[mtb$AmAcid == 'Pro', c("Number", "PerThous")]
+```
+
+c) Write an R function that you can apply to the table to find which of the amino acids shows the strongest codon bias, i.e., the strongest departure from uniform distribution among its possible spellings.
+```{r}
+library(tidyverse)
+expected_codon <- codon_no %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = 'AmAcid') %>% 
+  mutate(prob = 1/codon_no)
+expected_codon
+
+codon_expected_from_mtb <- mtb %>% 
+  group_by(AmAcid) %>% 
+  mutate(total_codon = sum(Number),
+         n_codons = n(),
+         expected_codon = total_codon/n_codons)
+codon_expected_from_mtb
+
+# calculate chi-sq test
+codon_expected_from_mtb %>% 
+  filter(n_codons > 1) %>% 
+  group_by(AmAcid) %>% 
+  mutate(chi_sq = ((Number - expected_codon)^2/expected_codon)) %>% 
+  summarise(chi_sq = sum(chi_sq), n = n()) %>% 
+  mutate(p_val = pchisq(chi_sq, df = n-1, 
+                        log = T, lower.tail = F)) %>% 
+  arrange(p_val) %>% 
+  mutate(rank = 1:n())
+```
+
+Comment from [here](https://kind-neumann-789611.netlify.app/post/exercise-solution-for-chapter-2/)
+"As you may notice, these log transforms of the p-values (which we got rather than untransformed p-values in the pchisq call because we used the option log = TRUE) are large in magnitude and negative (so very tiny once you take the exponent if you re-transformed them to p-values) values. If you tried to calculate the untransformed p-values (and we did!), this number is so small (0.00000000e+00) that it is too small for R—it shows up as exactly zero in R, even though it actually is a very tiny, but still non-zero, number. To get around this issue, we told pchisq to work on these p-values as log transforms, and then we left the p-value as that log-transformed value. A group of numbers that are log transformed will be in the same order as their untransformed versions, so we don’t need to convert back to figure out which amino acid had that smallest p-value. We can just sort the amino acids from most negative to less negative using these log-transformed versions of the p-values. We now have the amino acids ranked from most biased codons (1) to least (19)."
+
+## 2.4
+Display GC content in a running window along the sequence of Staphylococcus Aureus. Read in a fasta file sequence from a file.
+```{r}
+library(Biostrings)
+staph <- readDNAStringSet('data/staphsequence.ffn.txt', 'fasta')
+staph
+```
+a) Look at the complete staph object and then display the first three sequences in the set.
+```{r}
+staph[1:3,]
+```
+b) Find the GC content along the sequence in sliding windows of width 100.
+```{r}
+GCstaph <- data.frame(
+  ID = names(staph),
+  GC = rowSums(alphabetFrequency(staph)[, 2:3]/width(staph) * 100)
+)
+GCstaph
+```
+
+c) Display the result of b).
+```{r}
+window = 100
+gc = rowSums( letterFrequencyInSlidingView(staph[[364]], window,
+      c("G","C")))/window
+plot(x = seq(along = gc), y = gc, type = "l")
+```
+
+d) How could we visualize the overall trends of these proportions along the sequence?
+```{r}
+plot(x = seq(along = gc), y = gc, type = "l")
+lines(lowess(x = seq(along = gc), y = gc, f = 0.2), col = 2)
+```
+
+## 2.5
+```{r}
+p_seq = seq(0, 1, by = 0.001)
+dfbetas = data.frame(
+  p = rep(p_seq, 5),
+  dbeta = c(dbeta(p_seq, 0.5, 0.5), 
+            dbeta(p_seq,   1,   1), 
+            dbeta(p_seq,  10,  30),
+            dbeta(p_seq,  20,  60), 
+            dbeta(p_seq,  50, 150)),
+  pars = rep(c("Beta(0.5,0.5)", "U(0,1)=Beta(1,1)", 
+               "Beta(10,30)", "Beta(20,60)", 
+               "Beta(50,150)"), each = length(p_seq)))
+dfbetas %>% 
+ggplot() +
+  geom_line(aes(x = p, y = dbeta, colour = pars)) +
+  theme(legend.title = element_blank()) +
+  geom_vline(aes(xintercept = 0.25), colour = "#990000", linetype = "dashed")
+```
+
