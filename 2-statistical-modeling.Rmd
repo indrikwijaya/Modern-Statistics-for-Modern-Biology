@@ -167,3 +167,54 @@ ggplot() +
   geom_vline(aes(xintercept = 0.25), colour = "#990000", linetype = "dashed")
 ```
 
+## 2.6
+Choose your own prior for the parameters of the Beta distribution. You can do this by sketching it here: https://jhubiostatistics.shinyapps.io/drawyourprior. Once you have set up a prior, re-analyse the data from Section 2.9.1, where we saw Y = 40 successes out of n = 300 trials. Compare your posterior distribution to the one we obtained in that section using a QQ-plot.
+
+Choose \alpha = 2.5, \beta = 8.5
+```{r}
+loglikelihood = function(theta, n = 300, k = 40) {
+  log(choose(n, k)) + k * log(theta) + (n-k)*log(1-theta)
+}
+
+p = seq(0, 1, by = 0.001)
+plot(p, loglikelihood(p), xlab = 'p', ylab = 'log f(p|y)')
+
+# use beta with alpha and beta as defined above
+rp = rbeta(1000000, 2.5, 8.5)
+
+y = vapply(rp,
+           function(x) rbinom(1, prob = x, size = 300),
+           integer(1))
+hist(y, breaks = 50, col = 'orange', main = '', xlab = '')
+
+# use this to generate a posterior distribution of p at a fixed Y value
+pPostEmp = rp[y==40]
+
+hist(pPostEmp, breaks = 40, col = 'chartreuse4', main='',
+     probability=T, xlab='posterior p')
+
+densPostTheory = dbeta(p, 2.5 + 40, 8.5 + (300 - 40))
+lines(p, densPostTheory, type = "l", lwd = 3)
+
+# check mean
+mean(pPostEmp)
+
+dp = p[2] - p[1]
+sum(p * densPostTheory * dp)
+
+# Use Monte Carlo integration instead
+pPostMC = rbeta(n = 1000000, 2.5 + 40, 8.5 + (300 - 40))
+mean(pPostMC)
+
+# check using QQ-plot
+qqplot(pPostMC, pPostEmp, type='l', asp=1)
+abline(a = 0, b = 1, col = 'blue')
+
+# check mean
+mean(pPostMC)
+
+p[which.max(densPostTheory)]
+
+quantile(pPostMC, c(0.025, 0.975))
+```
+
