@@ -1,0 +1,105 @@
+---
+title: "3-mixture-models"
+output: html_document
+date: '2022-04-06'
+editor_options: 
+  chunk_output_type: inline
+---
+
+## 4.1
+```{r}
+mx = readRDS('data/Myst.rds')$yvar
+str(mx)
+
+ggplot(tibble(mx), aes(x = mx)) + geom_histogram(binwidth = 0.025)
+
+# start by randomly assigning the membership weights for each of
+# the values in mx for each of the components
+wA = runif(length(mx))
+wB = 1 - wA
+
+# housekeeping variables to run EM iteratively
+iter      = 0
+loglik    = -Inf
+delta     = +Inf
+tolerance = 1e-3
+miniter   = 50
+maxiter   = 1000
+
+while((delta > tolerance) && (iter <= maxiter) || (iter < miniter)) {
+  lambda = mean(wA)
+  muA = weighted.mean(mx, wA)
+  muB = weighted.mean(mx, wB)
+  sdA = sqrt(weighted.mean((mx - muA)^2, wA))
+  sdB = sqrt(weighted.mean((mx - muB)^2, wB))
+
+  pA   =    lambda    * dnorm(mx, mean = muA, sd = sdA)
+  pB   = (1 - lambda) * dnorm(mx, mean = muB, sd = sdB)
+  ptot = pA + pB
+  wA   = pA / ptot
+  wB   = pB / ptot
+
+  loglikOld = loglik
+  loglik = sum(log(pA)) + sum(log(pB))
+  delta = abs(loglikOld - loglik)
+  iter = iter + 1
+}
+iter
+
+c(lambda, muA, muB, sdA, sdB)
+```
+
+a) Which lines correspond to the E-step, which to the M-step?
+- 1st 5 lines represent M-step. Given the current values of wA and wB, we estimate the parameters of the mixture model using the MLE: the mixture fraction of lambda by the mean wA, and the params of the 2 normal distribution components (muA, sdA) and (muB, sdB) by the sample means and the sample standard deviations. To take into account the membership weights, we use the weighted mean (function weighted.mean) and standard deviation
+- Next comes the E-step. For each of the elements in the data vector mx, we compute the probability densities pA and pB for the generative distribution models A and B, using the normal density function dnorm, weighted by the mixture fractions lambda and (1-lambda), respectively. From this we compute the updated membership weights wA and wB.
+
+Given the membership weights and the params, we then compute the loglikelihood
+
+b) What is the role of tolerance, miniter and maxiter?
+The termination criterion for the loop is based on delta, the change in the likelihood. The loop can end if this becomes smaller than tolerance. This is a simple way of checking whether the algorithm has converged6767 “Professional” implementations of such iterative algorithms typically work a bit harder to decide when convergence was reached.. The additional conditions on iter make sure that at least miniter iterations are run, and that the loop always stops after maxiter iterations. The latter is to make sure that the loop terminates in finite time no matter what.
+
+c) Compare the result with `mixtools` package
+```{r}
+gm = mixtools::normalmixEM(mx, k = 2)
+with(gm, c(lambda[1], mu, sigma))
+```
+We can see that the results from `mixtools` are very similar to our results
+
+## 4.2  
+```{r}
+library(flexmix)
+data('NPreg')
+```
+a) Plot the data and try to guess how the points were generated
+```{r}
+ggplot(NPreg, aes(x = x, y = yn)) +
+  geom_point()
+```
+- One maybe comes from a linear distribution, while the other may come from a quadratic distribution
+b) Fit a two component mixture model
+```{r}
+m1 = flexmix(yn ~ x + I(x^2), data = NPreg, k = 2)
+```
+c) Look at the estimated parameters of the mixture components and make a truth table that cross-classifies true classes versus cluster memberships. What does the summary of the object m1 show us?
+```{r}
+modeltools::parameters(m1, component=1)
+```
+```{r}
+modeltools::parameters(m1, component=2)
+```
+```{r}
+table(NPreg$class, modeltools::clusters(m1))
+```
+```{r}
+summary(m1)
+```
+```{r}
+NPreg = mutate(NPreg, gr = factor(class))
+ggplot(NPreg, aes(x = x, y = yn, group = gr)) +
+   geom_point(aes(colour = gr, shape = gr)) +
+   scale_colour_hue(l = 40, c = 180)
+```
+
+
+
+
