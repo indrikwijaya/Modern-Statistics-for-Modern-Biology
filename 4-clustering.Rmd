@@ -1,0 +1,168 @@
+---
+title: "4-clustering"
+output: html_document
+date: '2022-04-11'
+editor_options: 
+  chunk_output_type: console
+---
+
+## 5.1
+We can define the average dissimilarity of a point $x_i$ to a cluster $C_k$ as the average of the distances from $x_i$ to all points in $C_k$. Let $A(i)$ be the average dissimilarit of all points in the cluster that $x_i$ belongs to. Let $B(i)$ be the lowest average dissimilarity of $x_i$ to any other cluster of which $x_i$ is not a member. The cluster with the lowest average dissimilarity is said to be the neighboring cluster of $x_i$, because it is the next best fit cluster for point $x_i$. The sillhoutte index is $S(i) = \frac{B(i) - A(i)}{max_i(A(i), B(i))}$
+
+Compute the silhoutte index for the `simdata` 
+```{r}
+library('cluster')
+pam4 = pam(simdatxy, 4)
+sil = silhouette(pam4, 4)
+plot(sil, col=c("red","green","blue","purple"), main="Silhouette", border='NA')
+sil %>% 
+  unclass() %>% 
+  as.data.frame() %>% 
+  tibble::rownames_to_column(var = "orig_order") %>% 
+  arrange(as.numeric(orig_order)) %>% 
+  bind_cols(simdat) %>% 
+  ggplot(aes(x = x, y = y, shape = as.factor(cluster), color = sil_width)) + 
+  geom_point() + 
+  facet_wrap(~ class)
+```
+Change the number of clusters $k$ and assess which $k$ gives the best silhouette index.
+```{r}
+k <- c(2:10)
+sil_width <- data.frame()
+
+for (i in k) {
+  pam_i <- pam(simdatxy, i)
+  sil_i = silhouette(pam_i, i)
+  sil_width <- rbind(sil_width,
+                     data.frame(i, width = summary(sil_i)$avg.width))
+}
+sil_width
+ggplot(sil_width, aes(i, width)) + 
+  geom_point(alpha = 0.7) + 
+  geom_line() + 
+  theme_bw() + 
+  xlab('k') + ylab('Silhouette index') +
+  ggtitle('Different k values for Silhouette index')
+```
+
+$k=4$ gives us the highest Silhouette index which matches the true number of clusters
+
+Repeat this for groups that have uniform (unclustered) data distributions over a whole range of values
+
+```{r}
+set.seed(123)
+
+simdat_test = lapply(c(1), function(mx) {
+  lapply(c(1), function(my) {
+    tibble(x = rnorm(100, mean = mx, sd = 2),
+           y = rnorm(100, mean = my, sd = 2),
+           class = paste(mx, my, sep = ":"))
+   }) %>% bind_rows
+}) %>% bind_rows
+
+simdatxy_test = simdat_test[, c("x", "y")]
+
+ggplot(simdatxy_test, aes(x = x, y = y)) +
+  geom_point()
+
+# 4 clusters
+pam = pam(simdatxy_test, 4)
+sil = silhouette(pam, 4)
+plot(sil, col=c("red","green","blue","purple"), main="Silhouette", border = "NA")
+```
+
+The average silhouette width is 0.26, which is much lower than the clustered value of 0.50 from our first simulation. It should be pointed out that several of the points end up with negative silhouette widths. These observations were assigned to the wrong group entirely.
+
+## 5.2
+Make a “character” representation of the distance between the 20 locations in the dune data from the vegan package using the function symnum.
+
+Make a heatmap plot of these distances.
+
+```{r}
+#use cor as distance
+library(vegan)
+data('dune')
+dist <- cor(dune)
+symnum(dist, abbr.colnames = F)
+pheatmap::pheatmap(dist)
+```
+
+## 5.3
+Load the spirals data from the `kernlab` package. Plot the results of using 
+k-means on the data.
+```{r}
+library(kernlab)
+data('spirals')
+
+pam = pam(spirals, 2)
+spirals %>% as.data.frame() %>%
+    mutate(class = as.factor(pam$clustering)) %>% 
+    ggplot(aes(x = V1, y = V2, colour = class)) +
+    geom_point() + theme_bw()
+
+library(dbscan)
+dbscan_clust <- dbscan(spirals, eps=0.45, minPts=45)
+spirals_clust <- data.frame(spirals, cluster = as.factor(dbscan_clust$cluster))
+table(spirals_clust$cluster)
+spirals_clust %>% 
+  ggplot(aes(x = X1, y = X2, colour = as.factor(cluster))) + 
+  geom_point() + theme_bw()
+```
+
+## 5.5
+Amplicon bioinformatics: from raw reads to dereplicated sequences. As a supplementary exercise, we provide the intermediate steps necessary to a full data preprocessing workflow for denoising 16S rRNA sequences. We start by setting the directories and loading the downloaded data:
+
+```{r}
+base_dir = "data"
+miseq_path = file.path(base_dir, "MiSeq_SOP")
+filt_path = file.path(miseq_path, "filtered")
+fnFs = sort(list.files(miseq_path, pattern="_R1_001.fastq"))
+fnRs = sort(list.files(miseq_path, pattern="_R2_001.fastq"))
+sampleNames = sapply(strsplit(fnFs, "_"), `[`, 1)
+if (!file_test("-d", filt_path)) dir.create(filt_path)
+filtFs = file.path(filt_path, paste0(sampleNames, "_F_filt.fastq.gz"))
+filtRs = file.path(filt_path, paste0(sampleNames, "_R_filt.fastq.gz"))
+fnFs = file.path(miseq_path, fnFs)
+fnRs = file.path(miseq_path, fnRs)
+print(length(fnFs))
+```
+
+The data are highly-overlapping Illumina Miseq $2\times 250$ amplicon sequences from the V4 region of the 16S rRNA gene (Kozich et al. 2013). There were originally 360 fecal samples collected longitudinally from 12 mice over the first year of life. These were collected by P. D. Schloss et al. (2012) to investigate the development and stabilization of the murine microbiome. We have selected 20 samples to illustrate how to preprocess the data.
+
+We will need to filter out low-quality reads and trim them to a consistent length. While generally recommended filtering and trimming parameters serve as a starting point, no two datasets are identical and therefore it is always worth inspecting the quality of the data before proceeding. 
+
+```{r}
+library(dada2)
+plotQualityProfile(fnFs[1:2]) + ggtitle('Forward')
+plotQualityProfile(fnRs[1:2]) + ggtitle('Reverse')
+```
+Note that we also see the background distribution of quality scores at each position in Figure above as a grey-scale heat map. The dark colors correspond to higher frequency.
+
+## 5.6 
+Generate similar plots for four randomly selected sets of forward and reverse reads. Compare forward and reverse read qualities; what do you notice?
+
+```{r}
+ii = sample(length(fnFs), 4)
+plotQualityProfile(fnFs[ii]) + ggtitle('Forward')
+plotQualityProfile(fnRs[ii]) + ggtitle('Reverse')
+```
+
+## 5.7
+Here, the forward reads maintain high quality throughout, while the quality of the reverse reads drops significantly at about position 160. Therefore, we truncate the forward reads at position 240, and trimm the first 10 nucleotides as these positions are of lower quality. The reverse reads are trimmed at position 160. Combine these trimming parameters with standard filtering parameters remember to enforce a maximum of 2 expected errors per-read. (Hint: Trim and filter on paired reads jointly, i.e., both reads must pass the filter for the pair to pass. The input arguments should be chosen following the dada2 vignette carefully. We recommend filtering out all reads with any ambiguous nucleotides.)
+```{r}
+out = filterAndTrim(fnFs, filtFs, fnRs, filtRs,
+                    truncLen = c(240, 160),
+                    maxN=0, maxEE=2, truncQ = 2, rm.phix=T, trimLeft = 10,
+                    compress=T, multithread = F)
+head(out)
+```
+The maxN parameter omits all reads with more than maxN = 0 ambiguous nucleotides and maxEE at 2 excludes reads with more than 2 expected errors.
+
+The sequence data was imported into R from demultiplexed fastq files (i.e. one fastq for each sample) and simultaneously dereplicated to remove redundancy. Name the resulting objects by their sample provenance; they will have derep as their class.
+```{r}
+derepFs = derepFastq(filtFs, verbose = FALSE)
+derepRs = derepFastq(filtRs, verbose = FALSE)
+names(derepFs) = sampleNames
+names(derepRs) = sampleNames
+```
+
