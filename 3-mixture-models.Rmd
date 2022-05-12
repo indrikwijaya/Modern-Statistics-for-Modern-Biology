@@ -6,6 +6,7 @@ editor_options:
   chunk_output_type: inline
 ---
 
+Some solutions are taken/motivated from [here](https://kind-neumann-789611.netlify.app/post/ex-2-6/)
 ## 4.1
 ```{r}
 mx = readRDS('data/Myst.rds')$yvar

@@ -168,6 +168,7 @@ ggplot() +
 ```
 
 ## 2.6
+[Source](https://kind-neumann-789611.netlify.app/post/ex-2-6/)
 Choose your own prior for the parameters of the Beta distribution. You can do this by sketching it here: https://jhubiostatistics.shinyapps.io/drawyourprior. Once you have set up a prior, re-analyse the data from Section 2.9.1, where we saw Y = 40 successes out of n = 300 trials. Compare your posterior distribution to the one we obtained in that section using a QQ-plot.
 
 Choose \alpha = 2.5, \beta = 8.5

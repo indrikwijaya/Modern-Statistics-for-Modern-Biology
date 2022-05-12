@@ -7,6 +7,7 @@ editor_options:
 ---
 
 ## 5.1
+[Source](https://kind-neumann-789611.netlify.app/post/exercise-solution-for-5-1/)
 We can define the average dissimilarity of a point $x_i$ to a cluster $C_k$ as the average of the distances from $x_i$ to all points in $C_k$. Let $A(i)$ be the average dissimilarit of all points in the cluster that $x_i$ belongs to. Let $B(i)$ be the lowest average dissimilarity of $x_i$ to any other cluster of which $x_i$ is not a member. The cluster with the lowest average dissimilarity is said to be the neighboring cluster of $x_i$, because it is the next best fit cluster for point $x_i$. The sillhoutte index is $S(i) = \frac{B(i) - A(i)}{max_i(A(i), B(i))}$
 
 Compute the silhoutte index for the `simdata` 
