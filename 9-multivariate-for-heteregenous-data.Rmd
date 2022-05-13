@@ -1,0 +1,149 @@
+---
+title: "9-Multivariate-for-heterogeneous"
+output: html_document
+date: '2022-05-13'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 9.1 
+We are going to take another look at the Phylochip data, replacing the original expression values by presence/absence. We threshold the data to retain only those that have a value of at least 8.633 in at least 8 samples
+
+```{r}
+ibd.pres = ifelse(assayIBD[, 1:28] > 8.633, 1, 0)
+```
+
+Perform a correspondence analysis on these binary data and compare the plot you obtain to what we saw in Figure 9.12.
+
+```{r}
+IBDca <- dudi.coa(ibd.pres, scannf=F, nf = 4)
+fviz_eig(IBDca, geom = 'bar', bar_width=0.7) + 
+  ylab('Percentage of chisq') + ggtitle('')
+
+fviz(IBDca, element = "col", axes =c(1, 2), geom = "point",
+     habillage = day, palette = "Dark2", addEllipses = TRUE, color = day,
+     ellipse.type = "convex", alpha = 1, col.row.sup =  "blue",
+     select = list(name = NULL, cos2 = NULL, contrib = NULL),
+     repel = TRUE)
+```
+## 9.3
+The dates Plato wrote his various books are not known. We take the sentence endings and use those pattern frequencies as the data.
+```{r}
+platof = read.table("../data/platof.txt", header = TRUE)
+platof[1:4, ]
+
+```
+```{r}
+resPlato = dudi.coa(platof, scannf = FALSE, nf = 2)
+fviz_ca_biplot(resPlato, axes=c(2, 1)) + ggtitle("")
+fviz_eig(resPlato, geom = "bar", width = 0.6) + ggtitle("")
+```
+
+9.3a: from the biplot in Figure 9.33 can you guess at the chronological order of Plato’s works?
+Hint: the first (earliest) is known to be Republica. The last (latest) is known to be Laws.
+
+9.3b: which sentence ending did Plato use more frequently early in his life?
+
+9.3c: what percentage of the inertia (chisq-distance) is explained by the map in Figure 9.33?
+```{r}
+names(resPlato)
+sum(resPlato$eig)
+percentageInertia <- round(100*cumsum(resPlato$eig)/sum(resPlato$eig))
+percentageInertia
+percentageInertia[2]
+```
+
+## 9.4
+We are going to look at two datasets, one is a perturbed version of the other and they both present gradients as often seen in ecological data. Read in the two species count matrices lakelike and lakelikeh, which are stored as the object lakes.RData. Compare the output of correspondence analysis and principal component analysis on each of the two data sets; restrict yourself two dimensions. In the plots and the eigenvalues, what do you notice?
+```{r}
+load("../data/lakes.RData")
+lakelike[ 1:3, 1:8]
+```
+
+```{r}
+e_coa  = dudi.coa(lakelike,  scannf = FALSE, nf = 2)
+e_pca  = dudi.pca(lakelike,  scannf = FALSE, nf = 2)
+eh_coa = dudi.coa(lakelikeh, scannf = FALSE, nf = 2)
+eh_pca = dudi.pca(lakelikeh, scannf = FALSE, nf = 2)
+```
+
+Comparisons:
+```{r}
+scatter(e_pca)
+scatter(e_coa)
+s.label(e_pca$li)
+s.label(e_coa$li)
+
+s.label(eh_pca$co)
+s.label(eh_pca$li)
+s.label(eh_coa$li)
+s.label(eh_coa$co)
+
+```
+
+## 9.5
+We analyzed the normalized Moignard data in Section 9.5.1. Now redo the analysis with the raw data (in file nbt.3154-S3-raw.csv) and compare the output with that obtained using the normalized values.
+
+```{r}
+moignard_raw = as.matrix(read.csv("../data/nbt.3154-S3-raw.csv",
+                                  row.names = 1))
+dist2r.euclid = dist(moignard_raw)
+dist1r.l1 = dist(moignard_raw, "manhattan")
+cells.cmds  = cmdscale(dist1r.l1,     k = 20, eig = TRUE)
+cells2.cmds = cmdscale(dist2r.euclid, k = 20, eig = TRUE)
+sum(cells.cmds$eig[1:2]) / sum(cells.cmds$eig)
+```
+
+```{r}
+sum(cells2.cmds$eig[1:2])/sum(cells2.cmd$eig)
+```
+
+## 9.6
+We are going to explore the use of kernel methods.
+
+9.6a: compute kernelized distances using the kernlab for the Moignard data using various values for the sigma tuning parameter in the definition of the kernels. Then perform MDS on these kernelized distances. What difference is there in variability explained by the first four components of kernel multidimensional scaling?
+
+```{r}
+library("kernlab")
+Moignard = readRDS("../data/Moignard.rds")
+cellt = rowData(Moignard)$celltypes
+colsn = c("red", "purple", "orange", "green", "blue")
+blom = assay(Moignard)
+laplacedot1 = laplacedot(sigma = 1/3934)
+rbfdot1     = rbfdot(sigma = (1/3934)^2 )
+Klaplace_cellsn   = kernelMatrix(laplacedot1, blom)
+KGauss.cellsn     = kernelMatrix(rbfdot1, blom)
+Klaplace_rawcells = kernelMatrix(laplacedot1, moignard_raw)
+KGauss.rawcells   = kernelMatrix(rbfdot1, moignard_raw)
+```
+
+```{r}
+dist1kr = 1 - Klaplace_rawcells
+dist2kr = 1 - KGauss.rawcells
+dist1kn = 1 - Klaplace_cellsn
+dist2kn = 1 - KGauss.cellsn
+
+cells.kcmds  = cmdscale(dist1kr, k = 20, eig = TRUE)
+cells2.kcmds = cmdscale(dist2kr, k = 20, eig = TRUE)
+kperc1=round(100*sum(cells.kcmds$eig[1:4])/
+       sum(cells.kcmds$eig[which(cells.kcmds$eig>0)]))
+kperc2=round(100*sum(cells2.kcmds$eig[1:4])/
+       sum(cells2.kcmds$eig[which(cells2.kcmds$eig>0)]))
+cellsn.kcmds=cmdscale(dist1kn,k=20,eig=TRUE)
+cellsn2.kcmds=cmdscale(dist2kn,k=20,eig=TRUE)
+```
+
+9.6b: make interactive three dimensional representations of the components: is there a projection where you see a branch for the purple points?
+
+```{r}
+colc = rowData(Moignard)$cellcol
+library("scatterplot3d")
+scatterplot3d(cellsn2.kcmds$points[, 1:3], color=colc, pch = 20,
+   xlab = "Axis k1", ylab = "Axis k2", zlab = "Axis k3", angle=15)
+scatterplot3d(cellsn2.kcmds$points[, 1:3], color=colc, pch = 20,
+   xlab = "Axis k1", ylab = "Axis k2", zlab = "Axis k3", angle = -70)
+```
+
+
