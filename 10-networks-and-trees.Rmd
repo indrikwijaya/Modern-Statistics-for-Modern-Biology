@@ -1,0 +1,181 @@
+---
+title: "10-networks-trees"
+output: html_document
+date: '2022-06-08'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+```
+
+# 10.1 Create a function that plots a graph starting from an adjacency matrix
+```{r}
+ggplotadj = function(a){
+  n = nrow(a)
+  p = ncol(a)
+  melted_a = melt(a)
+  melted_a$value = as.factor(melted_a$value)
+  cols = c('white', 'darkblue')
+  ggplot(data = melted_a, aes(x = Var1, y = Var2, fill = value)) + 
+    geom_tile(colour = 'black') + 
+    coord_fixed(ratio = 1, ylim=c(0.5, n + 0.5), xlim = c(0.5, p + 0.5)) + 
+    scale_fill_manual(values=cols) + scale_x_discrete(name='', breaks=1:p) + 
+    scale_y_reverse(name='', breaks=n:1) + theme_bw() + 
+    theme(axis.text = element_text(size = 10),
+      legend.key = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white"),
+      panel.border=element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line =element_line(color="white"))
+}
+
+adjm <- matrix(sample(0:1, 100, replace=TRUE, prob=c(0.9,0.1)), ncol=10)
+ggplotadj(adjm)
+gadjm <- graph_from_adjacency_matrix(adjm)
+plot(gadjm)
+
+```
+
+# 10.3 
+Markov chain graph of transitions between states of the vaginal microbiota: In DiGiulio et al. (2015) the authors use an igraph plot to represent the transitions rates between community state types CSTs using the markovchain package. Load the data and the transition rates and state names into an object of the special class markovchain and tailor the layout carefully to include the percentage of preterm birth as a covariate for the vertices (make the vertex size proportional to this variable). Include the size of transitions between states as the width of the arrows.
+```{r}
+library(markovchain)
+# Make MC object
+mcPreg = new("markovchain", states=CSTs,
+             transitionMatrix=trans, name="PregCST")
+
+mcPreg
+# Set up igraph of the markov chain
+netMC  =  markovchain:::.getNet(mcPreg, round = TRUE)
+
+wts  =  E(netMC)$weight/100
+edgel  =  get.edgelist(netMC)
+elcat  =  paste(edgel[,1], edgel[,2])
+elrev  =  paste(edgel[,2], edgel[,1])
+edge.curved  =  sapply(elcat, function(x) x %in% elrev)
+samdf_def  =  data.frame(sample_data(ps))
+samdf_def  =  samdf_def[samdf$Preterm | samdf$Term,] # Only those definitely assigned, i.e. not marginal
+premat  =  table(samdf_def$CST, samdf_def$Preterm)
+rownames(premat)  =  markovchain::states(mcPreg)
+colnames(premat)  =  c("Term", "Preterm")
+premat
+premat  =  premat/rowSums(premat)
+vert.CSTclrs  =  CSTColors
+default.par  =  par(no.readonly = TRUE)
+
+#Define color scale
+# Plotting function for markov chain
+plotMC  =  function(object, ...) {
+    netMC  =  markovchain:::.getNet(object, round = TRUE)
+    plot.igraph(x = netMC, ...)
+}
+
+# Color bar for the markov chain visualization, gradient in strength of preterm association
+color.bar  =  function(lut, min, max=-min, nticks=11, ticks=seq(min, max, len=nticks), title=NULL) {
+    scale = (length(lut)-1)/(max-min)
+    cur.par = par(no.readonly = TRUE)
+    par(mar = c(0, 4, 1, 4) + 0.1, oma = c(0, 0, 0, 0) + 0.1)
+    par(ps = 10, cex = 0.8)
+    par(tcl=-0.2, cex.axis=0.8, cex.lab = 0.8)
+    plot(c(min,max), c(0,10), type='n', bty='n', xaxt='n', xlab=", yaxt='n', ylab=", main=title)
+    axis(1, c(0, 0.5, 1))
+    for (i in 1:(length(lut)-1)) {
+      x = (i-1)/scale + min
+      rect(x,0,x+1/scale,10, col=lut[i], border=NA)
+    }
+}
+
+
+pal  =  colorRampPalette(c("grey50", "maroon", "magenta2"))(101)
+vert.clrs  =  sapply(states(mcPreg), function(x) pal[1+round(100*premat[x,"Preterm"])])
+vert.sz  =  4 + 2*sapply(states(mcPreg),
+              function(x) nrow(unique(sample_data(ps)[sample_data(ps)$CST==x,"SubjectID"])))
+vert.sz  =  vert.sz * 0.85
+vert.font.clrs  =  c("white", "white", "white", "white", "white")
+# E(netMC) to see edge list, have to define loop angles individually by the # in edge list, not vertex
+edge.loop.angle = c(0, 0, 0, 0, 3.14, 3.14, 0, 0, 0, 0, 3.14, 0, 0, 0, 0, 0)-0.45
+
+layout  =  matrix(c(0.6,0.95, 0.43,1, 0.3,0.66, 0.55,0.3, 0.75,0.65), nrow = 5, ncol = 2, byrow = TRUE)
+
+# Colored by association with preterm birth
+layout(matrix(c(1,1,2,2), 2, 2, byrow = TRUE), heights=c(1,10))
+color.bar(pal, min=0, max=1, nticks=6, title="Fraction preterm")
+par(mar=c(0,1,1,1)+0.1)
+edge.arrow.size=0.8
+edge.arrow.width=1.4
+edge.width = (15*wts + 0.1)*0.6
+edge.labels  =  as.character(E(netMC)$weight/100)
+edge.labels[edge.labels<0.4]  =  NA  # labels only for self-loops
+plotMC(mcPreg, edge.arrow.size=edge.arrow.size, edge.arrow.width = edge.arrow.width,
+       edge.width=edge.width, edge.curved=edge.curved,
+       vertex.color=vert.clrs, vertex.size=(vert.sz),
+       vertex.label.font = 2, vertex.label.cex = 1,
+       vertex.label.color = vert.font.clrs, vertex.frame.color = NA,
+       layout=layout, edge.loop.angle = edge.loop.angle)
+par(default.par)
+```
+
+# 10.5
+Read the txt file ccnb1datsmall.txt into R and make a plot of the graph using one of the graph visualization methods covered in this chapter.
+```{r}
+dat = read.table('data/ccnb1datsmall.txt', header = T, comment.char = "", stringsAsFactors = T)
+v = levels(unlist(dat[,1:2]))        # vertex names
+n = length(v)                        # number of vertices
+e = matrix(match(as.character(unlist(dat[,1:2])), v),ncol=2) # edge list
+w = dat$coexpression                 # edge weights
+
+# convert the matrix to take into account that it's undirected graph
+M = matrix(0, n, n)
+M[e] = w
+M = M + t(M)
+dimnames(M) = list(v, v)
+A = 1*(M > 0)
+
+library(igraph)
+net = network(e, directed = F)
+par(mar = rep(0, 4))
+plot(net, label = v)
+```
+
+# 10.6
+Use a heatmap to plot the adj matrix from 10.5
+```{r}
+breaks  =  c(0, seq(0.9, 1, length=11))
+cols  =  grey(1-c(0,seq(0.5,1,length=10)))
+ccnb1ind  =  which(v == "CCNB1")
+vcols  =  rep("white",n)
+vcols[ccnb1ind]  =  "blue"
+vcols[which(M[,ccnb1ind]>0 | M[ccnb1ind,])]  =  "red"
+par(mar = rep(0, 4))
+heatmap(M, symm = TRUE, ColSideColors = vcols, RowSideColors = vcols,
+        col = cols, breaks = breaks,  frame = TRUE)
+legend("topleft", c("Neighbors(CCNB1)", "CCNB1"),
+       fill = c("red","blue"),
+       bty = "n", inset = 0, xpd = TRUE,  border = FALSE)
+
+```
+
+# 10.9
+Perform the Friedman-Rafsy type test with a "two-nearest" neighbor-graph using the Bray-Curtis dissimilarity
+```{r}
+ps1  = readRDS("data/ps1.rds")
+gt = graph_perm_test(ps1,"family_relationship",
+       distance = "bray", grouping = "host_subject_id",
+       type = "knn", knn = 2)
+gt$pval
+
+plot_test_network(gt)
+permdf = data.frame(perm=gt$perm)
+obs = gt$observed
+ymax = max(gt$perm)
+ggplot(permdf, aes(x = perm)) + geom_histogram(bins = 20) +
+  geom_segment(aes(x = obs, y = 0, xend = obs, yend = ymax/10), color = "red") +
+  geom_point(aes(x = obs, y = ymax/10), color = "red") + xlab("Number of pure edges")
+#plot_permutations(gt)
+
+```
+
